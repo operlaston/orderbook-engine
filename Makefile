@@ -23,7 +23,11 @@ LIB_OBJS := $(BUILD)/Orderbook.o
 TEST_SRCS := $(wildcard tests/*.cpp)
 TEST_OBJS := $(TEST_SRCS:tests/%.cpp=$(BUILD)/tests/%.o)
 
-.PHONY: all clean test
+# Each bench/*.cpp is its own standalone binary (own main()).
+BENCH_SRCS := $(wildcard bench/*.cpp)
+BENCH_BINS := $(BENCH_SRCS:bench/%.cpp=$(BUILD)/%)
+
+.PHONY: all clean test bench
 
 all: $(BUILD)/orderbook $(BUILD)/client
 
@@ -49,6 +53,19 @@ $(BUILD)/run_tests: $(TEST_OBJS) $(LIB_OBJS) | $(BUILD)
 $(BUILD)/tests/%.o: tests/%.cpp | $(BUILD)/tests
 	$(CXX) $(CXXFLAGS) $(INCLUDES) -c $< -o $@
 
+# bench
+bench: $(BENCH_BINS)
+	./$(BUILD)/benchmark
+	./$(BUILD)/bench_app
+
+# engine microbenchmark: links the matching engine directly, no networking
+$(BUILD)/benchmark: bench/benchmark.cpp $(LIB_OBJS) | $(BUILD)
+	$(CXX) $(CXXFLAGS) $(INCLUDES) $< $(LIB_OBJS) -o $@ $(LDFLAGS)
+
+# whole-app benchmark: drives the real server binary over TCP
+$(BUILD)/bench_app: bench/bench_app.cpp | $(BUILD)/orderbook $(BUILD)
+	$(CXX) $(CXXFLAGS) $(INCLUDES) -DSERVER_BIN='"$(BUILD)/orderbook"' $< -o $@ $(LDFLAGS)
+
 $(BUILD):
 	mkdir -p $(BUILD)
 
@@ -58,4 +75,4 @@ $(BUILD)/tests: | $(BUILD)
 clean:
 	rm -rf build
 
--include $(SERVER_OBJS:.o=.d) $(BUILD)/Client.d $(TEST_OBJS:.o=.d)
+-include $(SERVER_OBJS:.o=.d) $(BUILD)/Client.d $(TEST_OBJS:.o=.d) $(BENCH_BINS:=.d)
